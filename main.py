@@ -23,8 +23,8 @@ st.markdown("""
 # 2. MOTOR DE NOTIFICAÇÕES (Telegram)
 def enviar_telegram(mensagem):
     try:
-        token = st.secrets["TELEGRAM_TOKEN"]
-        chat_id = st.secrets["TELEGRAM_CHAT_ID"]
+        token = st.secrets["8429949960:AAE7wSVGQLUC2AcSVJZ-epy22ygKOtirPe0"]
+        chat_id = st.secrets["8520189654"]
         url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id}&text={mensagem}&parse_mode=Markdown"
         requests.get(url, timeout=10)
     except:

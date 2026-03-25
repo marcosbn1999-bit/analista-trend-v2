@@ -113,7 +113,7 @@ if not df.empty and len(df) > 50:
         st.plotly_chart(fig, use_container_width=True)
 
         # 6. DISPARO TELEGRAM
-        if sinal != "AGUARDAR" and confiabilidade >= 75:
+        if sinal != "AGUARDAR" and confiabilidade >= 0:
             if st.session_state.get('last_alert') != sinal:
                 tp = preco + (atr * 2) if "COMPRA" in sinal else preco - (atr * 2)
                 sl = preco - (atr * 1.5) if "COMPRA" in sinal else preco + (atr * 1.5)

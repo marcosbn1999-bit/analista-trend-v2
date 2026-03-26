@@ -3,126 +3,127 @@ import pandas as pd
 import pandas_ta as ta
 import yfinance as yf
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import requests
+from datetime import datetime
+from streamlit_autorefresh import st_autorefresh
 
-# 1. CONFIGURAÇÃO DE ELITE
-st.set_page_config(page_title="Analista Trend Pro | IQ Style", layout="wide", initial_sidebar_state="expanded")
+# 1. SETUP DE INTERFACE & AUTO-REFRESH
+st.set_page_config(page_title="Analista Pro | Intelligence", layout="wide")
+st_autorefresh(interval=60 * 1000, key="datarefresh")
 
-# Interface Dark Mode (Estilo IQ Option)
+# Inicializa o Histórico na Sessão (para não apagar ao atualizar)
+if 'historico' not in st.session_state:
+    st.session_state.historico = []
+
 st.markdown("""
     <style>
-    .main { background-color: #0b0e11; color: #ffffff; }
-    div.stMetric { background-color: #1c2127; padding: 15px; border-radius: 10px; border: 1px solid #2d343c; }
-    [data-testid="stSidebar"] { background-color: #14181d; border-right: 1px solid #2d343c; }
-    .stButton>button { width: 100%; border-radius: 5px; background-color: #2d343c; color: white; border: none; }
-    .stButton>button:hover { background-color: #3e4751; border: 1px solid #00c853; }
-    header {visibility: hidden;} footer {visibility: hidden;}
+    .stApp { background-color: #0b0e11; color: #e6edf3; }
+    .status-card { background: #1c2127; padding: 15px; border-radius: 12px; border: 1px solid #30363d; text-align: center; }
+    .historico-card { background: #161b22; padding: 10px; border-radius: 8px; margin-bottom: 5px; border-left: 4px solid #30363d; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. MOTOR DE NOTIFICAÇÕES (Telegram)
-def enviar_telegram(mensagem):
-    try:
-        token = st.secrets["8429949960:AAE7wSVGQLUC2AcSVJZ-epy22ygKOtirPe0"]
-        chat_id = st.secrets["8520189654"]
-        url = f"https://api.telegram.org/bot{token}/sendMessage?chat_id={chat_id}&text={mensagem}&parse_mode=Markdown"
-        requests.get(url, timeout=10)
-    except:
-        st.warning("⚠️ Configure TELEGRAM_TOKEN e CHAT_ID nos Secrets.")
-
-# --- SIDEBAR (SELETOR IQ OPTION) ---
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/2502/2502543.png", width=50)
-    st.title("Trend Pro")
+# 2. MOTOR DE INTELIGÊNCIA (ALTA PROBABILIDADE)
+def processar_inteligencia(ticker):
+    df = yf.download(ticker, period="60d", interval="1h", progress=False)
+    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
     
-    st.markdown("### 💎 Ativos Rápidos")
-    if 'ativo' not in st.session_state: st.session_state.ativo = "BTC-USD"
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("₿ BTC"): st.session_state.ativo = "BTC-USD"
-        if st.button("🔷 ETH"): st.session_state.ativo = "ETH-USD"
-    with col2:
-        if st.button("☀️ SOL"): st.session_state.ativo = "SOL-USD"
-        if st.button("💵 EUR/USD"): st.session_state.ativo = "EURUSD=X"
-
-    st.divider()
-    busca = st.text_input("🔍 Buscar Ativo", value=st.session_state.ativo).upper()
-    if busca != st.session_state.ativo:
-        st.session_state.ativo = busca
-        st.rerun()
-
-    timeframe = st.selectbox("⏱️ Intervalo", ["5m", "15m", "1h", "4h", "1d"], index=1)
-    
-    st.divider()
-    if st.button("🔔 Testar Telegram"):
-        enviar_telegram(f"✅ *Analista Trend Ativo*\nMonitorando: {st.session_state.ativo}")
-        st.toast("Sinal enviado!")
-
-# --- PROCESSAMENTO ---
-@st.cache_data(ttl=60)
-def obter_dados(ticker, interval):
-    periodo = "5d" if "m" in interval else "max"
-    df = yf.download(ticker, period=periodo, interval=interval)
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    return df
-
-ativo = st.session_state.ativo
-df = obter_dados(ativo, timeframe)
-
-if not df.empty and len(df) > 50:
-    # 3. INTELIGÊNCIA TÉCNICA
-    df['RSI_14'] = ta.rsi(df['Close'], length=14)
-    df['SMA_50'] = ta.sma(df['Close'], length=50)
-    df['ATR_14'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
+    df['SMA_200'] = ta.sma(df['Close'], length=200)
+    df['RSI'] = ta.rsi(df['Close'], length=14)
     adx_df = ta.adx(df['High'], df['Low'], df['Close'], length=14)
-    df['ADX_14'] = adx_df['ADX_14']
+    df['ADX'] = adx_df['ADX_14']
+    df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
     
-    df_clean = df.dropna()
-    if not df_clean.empty:
-        atual = df_clean.iloc[-1]
-        preco, rsi, adx, sma50, atr = atual['Close'], atual['RSI_14'], atual['ADX_14'], atual['SMA_50'], atual['ATR_14']
-
-        # 4. LÓGICA DE SINAL
-        score = 0
-        sinal, cor_sinal, detalhe = "AGUARDAR", "#546e7a", "Aguardando confluência..."
-
-        if rsi < 35 and preco > sma50 and adx > 25:
-            sinal, cor_sinal, detalhe, score = "COMPRA FORTE", "#00c853", "Tendência de Alta + RSI Baixo", 85
-        elif rsi > 65 and preco < sma50 and adx > 25:
-            sinal, cor_sinal, detalhe, score = "VENDA FORTE", "#ef5350", "Tendência de Baixa + RSI Alto", 85
-
-        confiabilidade = min(score, 98) if sinal != "AGUARDAR" else 0
-
-        # 5. DASHBOARD VISUAL
-        st.markdown(f"""
-            <div style="background-color: #1c2127; padding: 25px; border-radius: 15px; border-left: 10px solid {cor_sinal}; margin-bottom: 25px;">
-                <div style="display: flex; justify-content: space-between;">
-                    <div><h1 style="margin:0; color:white;">{sinal}</h1><p style="color:#aaa;">{detalhe}</p></div>
-                    <div style="text-align: right;"><h2 style="margin:0; color:{cor_sinal};">{confiabilidade}%</h2><p style="color:#aaa; font-size:0.8em;">CONFIABILIDADE</p></div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        # Gráfico Estilo IQ Option
-        fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
-        fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Preço"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], line=dict(color='#ff9800', width=2), name="Média 50"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df.index, y=df['RSI_14'], line=dict(color='#9c27b0', width=2), name="RSI"), row=2, col=1)
+    ultimo = df.iloc[-1]
+    score = 0
+    status = "AGUARDAR"
+    
+    # Filtros de Elite (80% Win Rate Target)
+    trend_up = ultimo['Close'] > ultimo['SMA_200']
+    strong_move = ultimo['ADX'] > 25
+    
+    if trend_up and ultimo['RSI'] < 38 and strong_move:
+        score = 88; status = "COMPRA"
+    elif not trend_up and ultimo['RSI'] > 62 and strong_move:
+        score = 88; status = "VENDA"
+    elif strong_move:
+        score = 60; status = "MONITORAR"
+    else:
+        score = 35; status = "NEUTRO"
         
-        fig.update_layout(template="plotly_dark", plot_bgcolor='#0b0e11', paper_bgcolor='#0b0e11', 
-                          xaxis_rangeslider_visible=False, height=700, margin=dict(l=10, r=10, t=10, b=10))
-        st.plotly_chart(fig, use_container_width=True)
+    return df, score, status
 
-        # 6. DISPARO TELEGRAM (Gatilho Ajustado)
-        if sinal != "AGUARDAR" and confiabilidade >= 75:
-            if st.session_state.get('last_alert') != sinal:
-                tp = preco + (atr * 2.5) if "COMPRA" in sinal else preco - (atr * 2.5)
-                sl = preco - (atr * 1.5) if "COMPRA" in sinal else preco + (atr * 1.5)
-                msg = f"🎯 *SINAL PRO: {ativo}*\n\n🔥 *{sinal}*\n✅ Confiança: {confiabilidade}%\n💰 Preço: {preco:.2f}\n🛡️ Stop: {sl:.2f}\n📈 Alvo: {tp:.2f}"
-                enviar_telegram(msg)
-                st.session_state['last_alert'] = sinal
-else:
-    st.error("Dados insuficientes. Tente outro ativo ou aumente o tempo gráfico.")
+# --- SIDEBAR: GESTÃO DE RISCO ---
+with st.sidebar:
+    st.title("🛡️ Gestão de Risco")
+    banca = st.number_input("Banca ($)", value=1000.0, step=100.0)
+    risco_perc = st.slider("Risco por Trade (%)", 0.5, 5.0, 1.0)
+    valor_risco = banca * (risco_perc / 100)
+    st.divider()
+    
+    st.subheader("📜 Últimos Alertas")
+    if not st.session_state.historico:
+        st.write("Aguardando sinais...")
+    for item in st.session_state.historico[::-1][:8]: # Mostra os últimos 8
+        cor_h = "#00c853" if item['dir'] == "COMPRA" else "#ff5252"
+        st.markdown(f"""
+            <div class='historico-card'>
+                <span style='color:{cor_h}; font-weight:bold;'>{item['dir']}</span> | {item['ativo']}<br>
+                <span style='font-size:0.7em; color:#8b949e;'>{item['hora']}</span>
+            </div>
+        """, unsafe_allow_html=True)
+
+# --- CONTEÚDO PRINCIPAL ---
+st.title("🎯 Analista Pro | Intelligence")
+ATIVOS = ["BTC-USD", "ETH-USD", "SOL-USD", "EURUSD=X", "XAUUSD=X", "NVDA", "AAPL"]
+
+# Scanner de Topo
+cols = st.columns(len(ATIVOS))
+for i, t in enumerate(ATIVOS):
+    _, sc, stt = processar_inteligencia(t)
+    
+    # Adiciona ao histórico se for um sinal forte e novo
+    if sc >= 80:
+        agora = datetime.now().strftime('%H:%M')
+        if not any(h['ativo'] == t and h['hora'] == agora for h in st.session_state.historico):
+            st.session_state.historico.append({'ativo': t, 'dir': stt, 'hora': agora})
+
+    with cols[i]:
+        cor = "#00c853" if stt == "COMPRA" else "#ff5252" if stt == "VENDA" else "#8b949e"
+        st.markdown(f"<div class='status-card'><p style='font-size:0.7em;color:#8b949e;margin:0;'>{t}</p><h3 style='color:{cor};margin:0;'>{sc}%</h3><p style='font-size:0.6em;color:{cor};margin:0;'>{stt}</p></div>", unsafe_allow_html=True)
+
+st.divider()
+
+# Detalhes do Ativo
+selecionado = st.selectbox("Raio-X do Ativo:", ATIVOS)
+df_d, sc_d, stt_d = processar_inteligencia(selecionado)
+atual = df_d.iloc[-1]
+
+c1, c2 = st.columns([2, 1])
+
+with c1:
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(x=df_d.index, open=df_d['Open'], high=df_d['High'], low=df_d['Low'], close=df_d['Close'], name="Preço"))
+    fig.add_trace(go.Scatter(x=df_d.index, y=df_d['SMA_200'], line=dict(color='#ff9800', width=2), name="Média 200"))
+    fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=500, margin=dict(l=0,r=0,t=0,b=0))
+    st.plotly_chart(fig, use_container_width=True)
+
+with c2:
+    cor_st = "#00c853" if stt_d == "COMPRA" else "#ff5252" if stt_d == "VENDA" else "#8b949e"
+    st.markdown(f"<div style='background:#1c2127; padding:20px; border-radius:10px; border-left:8px solid {cor_st};'><h2 style='margin:0;color:{cor_st};'>{stt_d}</h2><p style='margin:0;'>Confiança: {sc_d}%</p></div>", unsafe_allow_html=True)
+    
+    st.divider()
+    if sc_d >= 60:
+        atr = atual['ATR']
+        dist_stop = atr * 1.5
+        stop = atual['Close'] - dist_stop if stt_d == "COMPRA" else atual['Close'] + dist_stop
+        alvo = atual['Close'] + (atr * 3) if stt_d == "COMPRA" else atual['Close'] - (atr * 3)
+        lote = valor_risco / dist_stop
+        
+        st.write(f"🛑 **Stop Loss:** {stop:.2f}")
+        st.write(f"🎯 **Take Profit:** {alvo:.2f}")
+        st.success(f"📟 **TAMANHO DO LOTE:** {lote:.4f}")
+    else:
+        st.info("Aguardando confluência de indicadores.")
+
+st.divider()
+st.caption(f"Terminal Analista Pro Intelligence • Versão 4.0 • {datetime.now().strftime('%d/%m/%Y %H:%M')}")

@@ -22,35 +22,53 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. MOTOR DE INTELIGÊNCIA (ALTA PROBABILIDADE)
+# 2. MOTOR DE INTELIGÊNCIA (ALTA PROBABILIDADE - VERSÃO BLINDADA)
 def processar_inteligencia(ticker):
-    df = yf.download(ticker, period="60d", interval="1h", progress=False)
-    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-    
-    df['SMA_200'] = ta.sma(df['Close'], length=200)
-    df['RSI'] = ta.rsi(df['Close'], length=14)
-    adx_df = ta.adx(df['High'], df['Low'], df['Close'], length=14)
-    df['ADX'] = adx_df['ADX_14']
-    df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
-    
-    ultimo = df.iloc[-1]
-    score = 0
-    status = "AGUARDAR"
-    
-    # Filtros de Elite (80% Win Rate Target)
-    trend_up = ultimo['Close'] > ultimo['SMA_200']
-    strong_move = ultimo['ADX'] > 25
-    
-    if trend_up and ultimo['RSI'] < 38 and strong_move:
-        score = 88; status = "COMPRA"
-    elif not trend_up and ultimo['RSI'] > 62 and strong_move:
-        score = 88; status = "VENDA"
-    elif strong_move:
-        score = 60; status = "MONITORAR"
-    else:
-        score = 35; status = "NEUTRO"
+    try:
+        df = yf.download(ticker, period="60d", interval="1h", progress=False)
+        if df.empty or len(df) < 50:
+            return None, 0, "ERRO DADOS"
+            
+        if isinstance(df.columns, pd.MultiIndex): 
+            df.columns = df.columns.get_level_values(0)
         
-    return df, score, status
+        # Indicadores com tratamento de erro
+        df['SMA_200'] = ta.sma(df['Close'], length=200)
+        df['RSI'] = ta.rsi(df['Close'], length=14)
+        df['ATR'] = ta.atr(df['High'], df['Low'], df['Close'], length=14)
+        
+        # Cálculo seguro do ADX
+        adx_df = ta.adx(df['High'], df['Low'], df['Close'], length=14)
+        if adx_df is not None and not adx_df.empty:
+            df['ADX'] = adx_df['ADX_14']
+        else:
+            df['ADX'] = 0 # Valor neutro caso falhe
+        
+        # Remove NaNs apenas para pegar o último valor válido
+        df_valid = df.dropna(subset=['RSI', 'SMA_200'])
+        if df_valid.empty:
+            return df, 0, "AGUARDAR"
+            
+        ultimo = df_valid.iloc[-1]
+        score = 0
+        status = "AGUARDAR"
+        
+        # Filtros de Elite
+        trend_up = ultimo['Close'] > ultimo['SMA_200']
+        strong_move = ultimo['ADX'] > 25
+        
+        if trend_up and ultimo['RSI'] < 38 and strong_move:
+            score = 88; status = "COMPRA"
+        elif not trend_up and ultimo['RSI'] > 62 and strong_move:
+            score = 88; status = "VENDA"
+        elif strong_move:
+            score = 60; status = "MONITORAR"
+        else:
+            score = 35; status = "NEUTRO"
+            
+        return df, score, status
+    except Exception as e:
+        return None, 0, "ERRO"
 
 # --- SIDEBAR: GESTÃO DE RISCO ---
 with st.sidebar:
